@@ -1,144 +1,218 @@
-import { Button } from "@heroui/button";
-import { Kbd } from "@heroui/kbd";
-import { Link } from "@heroui/link";
-import { Input } from "@heroui/input";
-import {
-  Navbar as HeroUINavbar,
-  NavbarBrand,
-  NavbarContent,
-  NavbarItem,
-  NavbarMenuToggle,
-  NavbarMenu,
-  NavbarMenuItem,
-} from "@heroui/navbar";
-import { link as linkStyles } from "@heroui/theme";
-import clsx from "clsx";
+import type { SVGProps } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useLocation, useNavigate } from "react-router-dom";
+import { AnimatePresence, motion } from "framer-motion";
+import { useTaskSheet } from "@/provider";
 
-import { siteConfig } from "@/config/site";
-import { ThemeSwitch } from "@/components/theme-switch";
-import {
-  TwitterIcon,
-  GithubIcon,
-  DiscordIcon,
-  HeartFilledIcon,
-  SearchIcon,
-} from "@/components/icons";
-import { Logo } from "@/components/icons";
+const MaterialHomeIcon = (props: SVGProps<SVGSVGElement>) => (
+  <svg aria-hidden="true" viewBox="0 0 24 24" width="20" height="20" fill="currentColor" {...props}>
+    <path d="M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z" />
+  </svg>
+);
+
+const MaterialLabelIcon = (props: SVGProps<SVGSVGElement>) => (
+  <svg aria-hidden="true" viewBox="0 0 24 24" width="20" height="20" fill="currentColor" {...props}>
+    <path d="M17.63 5.84C17.27 5.33 16.67 5 16 5H5C3.9 5 3 5.9 3 7v10c0 1.1.9 2 2 2h11c.67 0 1.27-.33 1.63-.84L22 12l-4.37-6.16z" />
+  </svg>
+);
+
+const MaterialAddIcon = (props: SVGProps<SVGSVGElement>) => (
+  <svg aria-hidden="true" viewBox="0 0 24 24" width="24" height="24" fill="currentColor" {...props}>
+    <path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z" />
+  </svg>
+);
+
+const MaterialCalendarIcon = (props: SVGProps<SVGSVGElement>) => (
+  <svg aria-hidden="true" viewBox="0 0 24 24" width="20" height="20" fill="currentColor" {...props}>
+    <path d="M19 3h-1V1h-2v2H8V1H6v2H5C3.9 3 3 3.9 3 5v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 16H5V8h14v11z" />
+  </svg>
+);
+
+const MaterialSettingsIcon = (props: SVGProps<SVGSVGElement>) => (
+  <svg aria-hidden="true" viewBox="0 0 24 24" width="20" height="20" fill="currentColor" {...props}>
+    <path d="M19.14 12.94a1.43 1.43 0 000-1.88l1.43-1.12a.5.5 0 00.12-.64l-1.71-2.96a.5.5 0 00-.6-.22l-1.69.68a6.7 6.7 0 00-1.6-.93l-.26-1.8a.5.5 0 00-.5-.43h-3.4a.5.5 0 00-.5.43l-.26 1.8a6.7 6.7 0 00-1.6.93l-1.69-.68a.5.5 0 00-.6.22L3.31 9.3a.5.5 0 00.12.64l1.43 1.12a4.5 4.5 0 000 1.88L3.43 14.06a.5.5 0 00-.12.64l1.71 2.96a.5.5 0 00.6.22l1.69-.68c.5.38 1.04.69 1.6.93l.26 1.8a.5.5 0 00.5.43h3.4a.5.5 0 00.5-.43l.26-1.8c.56-.24 1.1-.55 1.6-.93l1.69.68a.5.5 0 00.6-.22l1.71-2.96a.5.5 0 00-.12-.64l-1.43-1.12zM12 15.5A3.5 3.5 0 1115.5 12 3.5 3.5 0 0112 15.5z" />
+  </svg>
+);
+
+const HomeIcon = (props: SVGProps<SVGSVGElement>) => (
+  <svg
+    aria-hidden="true"
+    height="24"
+    width="24"
+    viewBox="0 0 24 24"
+    fill="none"
+    {...props}
+  >
+    <path d="M3 10.5L12 3l9 7.5V20a1 1 0 0 1-1 1h-5.5v-6h-5v6H4a1 1 0 0 1-1-1v-9.5Z" fill="currentColor"/>
+  </svg>
+);
+
+const TagIcon = (props: SVGProps<SVGSVGElement>) => (
+  <svg
+    aria-hidden="true"
+    height="24"
+    width="24"
+    viewBox="0 0 24 24"
+    fill="none"
+    {...props}
+  >
+    <path d="M2 12.5V5a1 1 0 0 1 1-1h7.5a2 2 0 0 1 1.41.59l8.5 8.5a2 2 0 0 1 0 2.83l-4.59 4.59a2 2 0 0 1-2.83 0l-8.5-8.5A2 2 0 0 1 2 12.5Z" fill="currentColor"/>
+    <circle cx="7.5" cy="7.5" r="1.5" fill="#000" opacity=".25"/>
+  </svg>
+);
+
+const PlusIcon = (props: SVGProps<SVGSVGElement>) => (
+  <svg
+    aria-hidden="true"
+    height="24"
+    width="24"
+    viewBox="0 0 24 24"
+    fill="none"
+    {...props}
+  >
+    <path d="M12 5v14M5 12h14" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
+  </svg>
+);
+
+const CalendarIcon = (props: SVGProps<SVGSVGElement>) => (
+  <svg
+    aria-hidden="true"
+    height="24"
+    width="24"
+    viewBox="0 0 24 24"
+    fill="none"
+    {...props}
+  >
+    <rect x="3" y="4" width="18" height="17" rx="2" ry="2" stroke="currentColor" strokeWidth="2"/>
+    <path d="M3 9h18" stroke="currentColor" strokeWidth="2"/>
+    <path d="M8 2v4M16 2v4" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
+  </svg>
+);
+
+const SettingsIcon = (props: SVGProps<SVGSVGElement>) => (
+  <svg
+    aria-hidden="true"
+    height="24"
+    width="24"
+    viewBox="0 0 24 24"
+    fill="none"
+    {...props}
+  >
+    <path d="M12 8a4 4 0 1 1 0 8 4 4 0 0 1 0-8Z" stroke="currentColor" strokeWidth="2"/>
+    <path d="M19.4 15a1 1 0 0 0 .2 1.09l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1 1 0 0 0-1.09-.2 1 1 0 0 0-.6.55 2 2 0 0 1-3.66 0 1 1 0 0 0-.6-.55 1 1 0 0 0-1.09.2l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1 1 0 0 0 .2-1.09 1 1 0 0 0-.55-.6 2 2 0 0 1 0-3.66 1 1 0 0 0 .55-.6 1 1 0 0 0-.2-1.09l-.06-.06A2 2 0 1 1 6.77 5.2l.06.06a1 1 0 0 0 1.09.2 1 1 0 0 0 .6-.55 2 2 0 0 1 3.66 0 1 1 0 0 0 .6.55 1 1 0 0 0 1.09-.2l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1 1 0 0 0-.2 1.09 1 1 0 0 0 .55.6 2 2 0 0 1 0 3.66 1 1 0 0 0-.55.6Z" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+  </svg>
+);
 
 export const Navbar = () => {
-  const searchInput = (
-    <Input
-      aria-label="Search"
-      classNames={{
-        inputWrapper: "bg-default-100",
-        input: "text-sm",
-      }}
-      endContent={
-        <Kbd className="hidden lg:inline-block" keys={["command"]}>
-          K
-        </Kbd>
-      }
-      labelPlacement="outside"
-      placeholder="Search..."
-      startContent={
-        <SearchIcon className="text-base text-default-400 pointer-events-none flex-shrink-0" />
-      }
-      type="search"
-    />
+  const navigate = useNavigate();
+  const location = useLocation();
+  const { openTaskSheet } = useTaskSheet();
+  const navRef = useRef<HTMLDivElement | null>(null);
+
+  const pathToKey = useMemo<Record<string, string>>(
+    () => ({
+      "/main": "main",
+      "/tags": "tags",
+      "/days": "days",
+      "/opt": "opt",
+    }),
+    [],
   );
+
+  const keyToPath = useMemo<Record<string, string>>(
+    () => ({
+      main: "/main",
+      tags: "/tags",
+      days: "/days",
+      opt: "/opt",
+    }),
+    [],
+  );
+
+  const order = useMemo(() => ["main", "tags", "add", "days", "opt"], []);
+  const routeKey = pathToKey[location.pathname] ?? "main";
+  const [currentKey, setCurrentKey] = useState<string>(routeKey);
+
+  useEffect(() => {
+    // sync with route (e.g., back/forward nav)
+    setCurrentKey(routeKey);
+  }, [routeKey]);
+
+  // no manual cursor measurements anymore; use shared layout animation instead
+
+  const handleChange = useCallback(
+    (key: React.Key) => {
+      if (key === "add") {
+        openTaskSheet();
+        return;
+      }
+      const k = String(key);
+      setCurrentKey(k);
+      const next = keyToPath[k];
+      if (next) navigate(next);
+    },
+    [keyToPath, navigate, openTaskSheet],
+  );
+
+  useEffect(() => {
+    const nav = navRef.current;
+    if (!nav) return;
+    const update = () => {
+      const rect = nav.getBoundingClientRect();
+      const viewportGap = Math.max(0, window.innerHeight - rect.bottom);
+      const height = nav.offsetHeight + viewportGap;
+      document.documentElement.style.setProperty("--bottom-nav-height", `${height}px`);
+    };
+    update();
+    const ro = typeof ResizeObserver !== "undefined" ? new ResizeObserver(update) : null;
+    if (ro) ro.observe(nav);
+    window.addEventListener("resize", update);
+    return () => {
+      if (ro) ro.disconnect();
+      window.removeEventListener("resize", update);
+    };
+  }, []);
 
   return (
-    <HeroUINavbar maxWidth="xl" position="sticky">
-      <NavbarContent className="basis-1/5 sm:basis-full" justify="start">
-        <NavbarBrand className="gap-3 max-w-fit">
-          <Link
-            className="flex justify-start items-center gap-1"
-            color="foreground"
-            href="/"
-          >
-            <Logo />
-            <p className="font-bold text-inherit">ACME</p>
-          </Link>
-        </NavbarBrand>
-        <div className="hidden lg:flex gap-4 justify-start ml-2">
-          {siteConfig.navItems.map((item) => (
-            <NavbarItem key={item.href}>
-              <Link
-                className={clsx(
-                  linkStyles({ color: "foreground" }),
-                  "data-[active=true]:text-primary data-[active=true]:font-medium",
-                )}
-                color="foreground"
-                href={item.href}
-              >
-                {item.label}
-              </Link>
-            </NavbarItem>
-          ))}
+    <>
+      <nav ref={navRef} className={`fixed bottom-4 left-1/2 transform -translate-x-1/2 z-50 bg-white/10 backdrop-blur-2xl shadow-lg w-[calc(100%-24px)] max-w-[calc(100vw-24px)] ${currentKey === 'days' ? 'rounded-b-2xl' : 'rounded-2xl'}`}>
+        <div className="w-full py-2">
+          <div className="relative grid grid-cols-5 items-center gap-4 px-4 py-3">
+            {order.map((k) => {
+              const isActive = currentKey === k;
+              const onClick = () => handleChange(k);
+              const Icon = k === "main" ? MaterialHomeIcon : k === "tags" ? MaterialLabelIcon : k === "add" ? MaterialAddIcon : k === "days" ? MaterialCalendarIcon : MaterialSettingsIcon;
+              return (
+                <div key={k} className="relative grid place-items-center">
+                  {isActive && (
+                    <motion.div
+                      layoutId="nav-cursor"
+                      className="absolute inset-0 m-1 rounded-md bg-black/70"
+                      transition={{ type: "spring", stiffness: 320, damping: 30, mass: 0.9 }}
+                    />
+                  )}
+                  <button className="relative z-10 grid h-10 w-10 place-items-center rounded-md transition-colors duration-200 hover:bg-default-100" onClick={onClick}>
+                    <Icon className={isActive ? "text-white" : "text-foreground"} />
+                    {k === "days" && <CalendarBadge />}
+                  </button>
+                </div>
+              );
+            })}
+          </div>
         </div>
-      </NavbarContent>
+      </nav>
 
-      <NavbarContent
-        className="hidden sm:flex basis-1/5 sm:basis-full"
-        justify="end"
-      >
-        <NavbarItem className="hidden sm:flex gap-2">
-          <Link isExternal href={siteConfig.links.twitter} title="Twitter">
-            <TwitterIcon className="text-default-500" />
-          </Link>
-          <Link isExternal href={siteConfig.links.discord} title="Discord">
-            <DiscordIcon className="text-default-500" />
-          </Link>
-          <Link isExternal href={siteConfig.links.github} title="GitHub">
-            <GithubIcon className="text-default-500" />
-          </Link>
-          <ThemeSwitch />
-        </NavbarItem>
-        <NavbarItem className="hidden lg:flex">{searchInput}</NavbarItem>
-        <NavbarItem className="hidden md:flex">
-          <Button
-            isExternal
-            as={Link}
-            className="text-sm font-normal text-default-600 bg-default-100"
-            href={siteConfig.links.sponsor}
-            startContent={<HeartFilledIcon className="text-danger" />}
-            variant="flat"
-          >
-            Sponsor
-          </Button>
-        </NavbarItem>
-      </NavbarContent>
-
-      <NavbarContent className="sm:hidden basis-1 pl-4" justify="end">
-        <Link isExternal href={siteConfig.links.github}>
-          <GithubIcon className="text-default-500" />
-        </Link>
-        <ThemeSwitch />
-        <NavbarMenuToggle />
-      </NavbarContent>
-
-      <NavbarMenu>
-        {searchInput}
-        <div className="mx-4 mt-2 flex flex-col gap-2">
-          {siteConfig.navMenuItems.map((item, index) => (
-            <NavbarMenuItem key={`${item}-${index}`}>
-              <Link
-                color={
-                  index === 2
-                    ? "primary"
-                    : index === siteConfig.navMenuItems.length - 1
-                      ? "danger"
-                      : "foreground"
-                }
-                href="#"
-                size="lg"
-              >
-                {item.label}
-              </Link>
-            </NavbarMenuItem>
-          ))}
-        </div>
-      </NavbarMenu>
-    </HeroUINavbar>
+      {/* Global task sheet is handled in Provider */}
+    </>
   );
 };
+
+function CalendarBadge() {
+  const { todayEventsCount } = useTaskSheet();
+  if (!todayEventsCount) return null;
+  return (
+    <span className="absolute -top-1 -right-1 grid h-4 min-w-4 place-items-center rounded-full bg-black px-1 text-[10px] text-white">
+      {todayEventsCount}
+    </span>
+  );
+}

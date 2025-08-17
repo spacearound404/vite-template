@@ -1,0 +1,18 @@
+# Dockerfile.dev
+FROM node:20-alpine AS dev
+WORKDIR /app
+
+# Копируем зависимостти и устанавливаем
+COPY package.json package-lock.json* ./
+RUN npm install
+
+# Копируем весь проект
+COPY . .
+
+RUN npm install -g heroui-cli
+RUN heroui add --all
+
+# Открываем порт сервера Vite (по умолчанию 5173, но можно поменять)
+EXPOSE 5173
+
+CMD ["npm", "run", "dev"]
