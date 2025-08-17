@@ -1,40 +1,44 @@
-import type { SVGProps } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
-import { AnimatePresence, motion } from "framer-motion";
+import { motion } from "framer-motion";
 import { useTaskSheet } from "@/provider";
+import { BiHomeAlt2 } from "react-icons/bi";
+import { PiTagSimpleBold } from "react-icons/pi";
+import { FaPlus } from "react-icons/fa";
+import { MdOutlineCalendarViewMonth } from "react-icons/md";
+import { TbSettings2 } from "react-icons/tb";
 
-const MaterialHomeIcon = (props: SVGProps<SVGSVGElement>) => (
+const MaterialHomeIcon = (props: React.SVGProps<SVGSVGElement>) => (
   <svg aria-hidden="true" viewBox="0 0 24 24" width="20" height="20" fill="currentColor" {...props}>
     <path d="M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z" />
   </svg>
 );
 
-const MaterialLabelIcon = (props: SVGProps<SVGSVGElement>) => (
+const MaterialLabelIcon = (props: React.SVGProps<SVGSVGElement>) => (
   <svg aria-hidden="true" viewBox="0 0 24 24" width="20" height="20" fill="currentColor" {...props}>
     <path d="M17.63 5.84C17.27 5.33 16.67 5 16 5H5C3.9 5 3 5.9 3 7v10c0 1.1.9 2 2 2h11c.67 0 1.27-.33 1.63-.84L22 12l-4.37-6.16z" />
   </svg>
 );
 
-const MaterialAddIcon = (props: SVGProps<SVGSVGElement>) => (
+const MaterialAddIcon = (props: React.SVGProps<SVGSVGElement>) => (
   <svg aria-hidden="true" viewBox="0 0 24 24" width="24" height="24" fill="currentColor" {...props}>
     <path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z" />
   </svg>
 );
 
-const MaterialCalendarIcon = (props: SVGProps<SVGSVGElement>) => (
+const MaterialCalendarIcon = (props: React.SVGProps<SVGSVGElement>) => (
   <svg aria-hidden="true" viewBox="0 0 24 24" width="20" height="20" fill="currentColor" {...props}>
     <path d="M19 3h-1V1h-2v2H8V1H6v2H5C3.9 3 3 3.9 3 5v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 16H5V8h14v11z" />
   </svg>
 );
 
-const MaterialSettingsIcon = (props: SVGProps<SVGSVGElement>) => (
+const MaterialSettingsIcon = (props: React.SVGProps<SVGSVGElement>) => (
   <svg aria-hidden="true" viewBox="0 0 24 24" width="20" height="20" fill="currentColor" {...props}>
     <path d="M19.14 12.94a1.43 1.43 0 000-1.88l1.43-1.12a.5.5 0 00.12-.64l-1.71-2.96a.5.5 0 00-.6-.22l-1.69.68a6.7 6.7 0 00-1.6-.93l-.26-1.8a.5.5 0 00-.5-.43h-3.4a.5.5 0 00-.5.43l-.26 1.8a6.7 6.7 0 00-1.6.93l-1.69-.68a.5.5 0 00-.6.22L3.31 9.3a.5.5 0 00.12.64l1.43 1.12a4.5 4.5 0 000 1.88L3.43 14.06a.5.5 0 00-.12.64l1.71 2.96a.5.5 0 00.6.22l1.69-.68c.5.38 1.04.69 1.6.93l.26 1.8a.5.5 0 00.5.43h3.4a.5.5 0 00.5-.43l.26-1.8c.56-.24 1.1-.55 1.6-.93l1.69.68a.5.5 0 00.6-.22l1.71-2.96a.5.5 0 00-.12-.64l-1.43-1.12zM12 15.5A3.5 3.5 0 1115.5 12 3.5 3.5 0 0112 15.5z" />
   </svg>
 );
 
-const HomeIcon = (props: SVGProps<SVGSVGElement>) => (
+const HomeIcon = (props: React.SVGProps<SVGSVGElement>) => (
   <svg
     aria-hidden="true"
     height="24"
@@ -47,7 +51,7 @@ const HomeIcon = (props: SVGProps<SVGSVGElement>) => (
   </svg>
 );
 
-const TagIcon = (props: SVGProps<SVGSVGElement>) => (
+const TagIcon = (props: React.SVGProps<SVGSVGElement>) => (
   <svg
     aria-hidden="true"
     height="24"
@@ -61,7 +65,7 @@ const TagIcon = (props: SVGProps<SVGSVGElement>) => (
   </svg>
 );
 
-const PlusIcon = (props: SVGProps<SVGSVGElement>) => (
+const PlusIcon = (props: React.SVGProps<SVGSVGElement>) => (
   <svg
     aria-hidden="true"
     height="24"
@@ -74,7 +78,7 @@ const PlusIcon = (props: SVGProps<SVGSVGElement>) => (
   </svg>
 );
 
-const CalendarIcon = (props: SVGProps<SVGSVGElement>) => (
+const CalendarIcon = (props: React.SVGProps<SVGSVGElement>) => (
   <svg
     aria-hidden="true"
     height="24"
@@ -89,7 +93,7 @@ const CalendarIcon = (props: SVGProps<SVGSVGElement>) => (
   </svg>
 );
 
-const SettingsIcon = (props: SVGProps<SVGSVGElement>) => (
+const SettingsIcon = (props: React.SVGProps<SVGSVGElement>) => (
   <svg
     aria-hidden="true"
     height="24"
@@ -181,18 +185,18 @@ export const Navbar = () => {
             {order.map((k) => {
               const isActive = currentKey === k;
               const onClick = () => handleChange(k);
-              const Icon = k === "main" ? MaterialHomeIcon : k === "tags" ? MaterialLabelIcon : k === "add" ? MaterialAddIcon : k === "days" ? MaterialCalendarIcon : MaterialSettingsIcon;
+              const Icon = k === "main" ? BiHomeAlt2 : k === "tags" ? PiTagSimpleBold : k === "add" ? FaPlus : k === "days" ? MdOutlineCalendarViewMonth : TbSettings2;
               return (
                 <div key={k} className="relative grid place-items-center">
                   {isActive && (
                     <motion.div
                       layoutId="nav-cursor"
-                      className="absolute inset-0 m-1 rounded-md bg-black/70"
+                      className="absolute inset-0 m-1 rounded-md bg-black"
                       transition={{ type: "spring", stiffness: 320, damping: 30, mass: 0.9 }}
                     />
                   )}
                   <button className="relative z-10 grid h-10 w-10 place-items-center rounded-md transition-colors duration-200 hover:bg-default-100" onClick={onClick}>
-                    <Icon className={isActive ? "text-white" : "text-foreground"} />
+                    <Icon className={isActive ? "text-white" : "text-foreground"} size={k === "add" ? 24 : 20} />
                     {k === "days" && <CalendarBadge />}
                   </button>
                 </div>

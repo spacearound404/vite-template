@@ -1,4 +1,5 @@
 import { Navbar } from "@/components/navbar";
+import { AuthBadge } from "@/components/AuthBadge";
 
 export default function DefaultLayout({
   children,
@@ -7,6 +8,9 @@ export default function DefaultLayout({
 }) {
   return (
     <div className="relative flex flex-col h-dvh" style={{ paddingBottom: "var(--bottom-nav-height, 96px)" }}>
+      <div className="flex items-center gap-2 px-3 pt-2">
+        <AuthBadge />
+      </div>
       <Navbar />
       <main className="mx-auto w-full px-3 flex-grow pt-2 pb-0 flex flex-col min-h-0">
         {children}

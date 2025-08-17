@@ -1,3 +1,15 @@
+Frontend integration with backend
+---------------------------------
+
+- Set `VITE_API_BASE_URL` to your backend URL.
+- The app auto-authenticates in Telegram WebApp via `Telegram.WebApp.initData` on load.
+
+Env example:
+
+```
+VITE_API_BASE_URL=http://localhost:8000
+```
+
 # Vite & HeroUI Template
 
 This is a template for creating applications using Vite and HeroUI (v2).

@@ -2,14 +2,17 @@ import { useMemo, useRef, useState, useEffect } from "react";
 import { animate, motion, useMotionValue, useTransform } from "framer-motion";
 import { Progress } from "@heroui/react";
 import { useTaskSheet } from "@/provider";
+import { getTasks, deleteTask, getProjects, getEvents, getMySettings } from "@/lib/api";
 
 type Task = {
   id: string;
   title: string;
-  date: string; // e.g. 1.09
-  projectColor: string; // color of the project this task belongs to
+  date: string; // deadline YYYY-MM-DD
   priority?: "low" | "medium" | "high";
   importance?: "low" | "medium" | "high";
+  description?: string;
+  projectId?: number | null;
+  durationHours?: number;
 };
 
 function formatHeaderDate(d: Date): { leftLabel: string } {
@@ -32,32 +35,39 @@ function formatHeaderDate(d: Date): { leftLabel: string } {
   return { leftLabel };
 }
 
+function weightLevel(x?: "low" | "medium" | "high") {
+  return x === "high" ? 2 : x === "medium" ? 1 : 0;
+}
+function dateKey(s?: string) {
+  if (!s) return Number.MAX_SAFE_INTEGER;
+  const t = Date.parse(s);
+  return Number.isNaN(t) ? Number.MAX_SAFE_INTEGER : t;
+}
+function compareTasks(a: Task, b: Task) {
+  const dk = dateKey(a.date) - dateKey(b.date);
+  if (dk !== 0) return dk;
+  const p = weightLevel(b.priority) - weightLevel(a.priority);
+  if (p !== 0) return p;
+  return weightLevel(b.importance) - weightLevel(a.importance);
+}
+function formatShortDate(iso?: string) {
+  if (!iso) return "";
+  const parts = iso.split("-");
+  if (parts.length !== 3) return "";
+  const d = String(Number(parts[2]));
+  const m = String(Number(parts[1])).padStart(2, "0");
+  return `${d}.${m}`;
+}
+
 export default function MainPage() {
   const { leftLabel } = useMemo(() => formatHeaderDate(new Date()), []);
-  const capacity = 65;
+  const [capacity, setCapacity] = useState<number>(0);
 
-  const [tasks, setTasks] = useState<Task[]>([
-    { id: "1", title: "Купить продукты и приготовить ужин", date: "1.09", projectColor: "#BBF7D0" },
-    { id: "2", title: "Собрать отчёт по проекту", date: "2.09", projectColor: "#BFDBFE" },
-    { id: "3", title: "Позвонить клиенту и обсудить условия", date: "3.09", projectColor: "#BFDBFE" },
-    { id: "4", title: "Сходить в спортзал", date: "4.09", projectColor: "#FECACA" },
-    { id: "5", title: "Длинное название задачи, которое должно переноситься на несколько строк без обрезки текста", date: "5.09", projectColor: "#FDE68A" },
-    { id: "6", title: "Прочитать главы книги по дизайну", date: "6.09", projectColor: "#DDD6FE" },
-    { id: "7", title: "Подготовить презентацию", date: "7.09", projectColor: "#BFDBFE" },
-    { id: "8", title: "Сходить к врачу", date: "8.09", projectColor: "#FECACA" },
-    { id: "9", title: "Забронировать билеты", date: "9.09", projectColor: "#BAE6FD" },
-    { id: "10", title: "Написать пост в блог", date: "10.09", projectColor: "#C7D2FE" },
-  ]);
+  const [tasks, setTasks] = useState<Task[]>([]);
+  const [loadingTasks, setLoadingTasks] = useState(false);
 
-  const [overdueTasks, setOverdueTasks] = useState<Task[]>([
-    { id: "o1", title: "Сдать отчёт за прошлую неделю", date: "29.08", projectColor: "#BFDBFE" },
-    { id: "o2", title: "Оплатить счёт за интернет", date: "28.08", projectColor: "#FECACA" },
-  ]);
-
-  const [upcomingTasks, setUpcomingTasks] = useState<Task[]>([
-    { id: "u1", title: "Подготовить тезисы к встрече", date: "12.09", projectColor: "#BFDBFE" },
-    { id: "u2", title: "Сформировать список покупок", date: "15.09", projectColor: "#BBF7D0" },
-  ]);
+  const [overdueTasks, setOverdueTasks] = useState<Task[]>([]);
+  const [upcomingTasks, setUpcomingTasks] = useState<Task[]>([]);
 
   const [showOverdue, setShowOverdue] = useState(true);
   const [showUpcoming, setShowUpcoming] = useState(true);
@@ -70,6 +80,147 @@ export default function MainPage() {
   const [upcomingHeight, setUpcomingHeight] = useState<number>(0);
 
   // Ссылки для ограниченных списков
+
+  const { openTaskSheet } = useTaskSheet();
+
+  const [projectColors, setProjectColors] = useState<Record<number, string>>({});
+
+  // Индикаторы скролла на главной странице отключены
+
+  // Load projects to know their colors
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const projs = await getProjects();
+        if (cancelled) return;
+        const map: Record<number, string> = {};
+        for (const p of projs) map[p.id] = p.color as any;
+        setProjectColors(map);
+      } catch {}
+    })();
+    const onProjChanged = async () => {
+      try {
+        const projs = await getProjects();
+        const map: Record<number, string> = {};
+        for (const p of projs) map[p.id] = p.color as any;
+        setProjectColors(map);
+      } catch {}
+    };
+    window.addEventListener("projects:changed", onProjChanged as any);
+    return () => { cancelled = true; window.removeEventListener("projects:changed", onProjChanged as any); };
+  }, []);
+
+  const colorFor = (projectId?: number | null): string => {
+    if (projectId == null) return "#BFDBFE";
+    return projectColors[projectId] ?? "#BFDBFE";
+  };
+
+  const reloadAll = async () => {
+    setLoadingTasks(true);
+    try {
+      const listPromise = getTasks();
+      const toLocalDate = (iso?: string): Date | null => {
+        if (!iso) return null;
+        const parts = iso.split("-");
+        if (parts.length !== 3) return null;
+        const y = Number(parts[0]);
+        const m = Number(parts[1]) - 1;
+        const d = Number(parts[2]);
+        if (Number.isNaN(y) || Number.isNaN(m) || Number.isNaN(d)) return null;
+        return new Date(y, m, d);
+      };
+      const startOfDay = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate());
+      const endOfDay = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate(), 23, 59, 59, 999);
+      const todayStart = startOfDay(new Date());
+      const todayEnd = endOfDay(new Date());
+
+      const list = await listPromise;
+      const mappedAll: Task[] = list
+        .filter((t: any) => (t.kind ?? "task") === "task")
+        .map((t: any) => ({
+          id: String(t.id),
+          title: t.title,
+          date: t.deadline ?? "",
+          priority: t.priority ?? "medium",
+          importance: t.importance ?? "medium",
+          description: t.description ?? "",
+          projectId: t.project_id ?? null,
+          durationHours: t.duration_hours ?? 0,
+        }));
+
+      const todays: Task[] = [];
+      const overdue: Task[] = [];
+      const upcoming: Task[] = [];
+
+      for (const t of mappedAll) {
+        const d = toLocalDate(t.date);
+        if (!d) continue;
+        const day = startOfDay(d).getTime();
+        const todayTs = todayStart.getTime();
+        if (day === todayTs) {
+          todays.push(t);
+        } else if (day < todayTs) {
+          overdue.push(t);
+        } else {
+          upcoming.push(t);
+        }
+      }
+
+      setTasks(todays.sort(compareTasks));
+      setOverdueTasks(overdue.sort(compareTasks));
+      setUpcomingTasks(upcoming.sort(compareTasks));
+
+      // Capacity calculation (tasks + events vs settings for today)
+      try {
+        const [events, settings] = await Promise.all([
+          getEvents({ start: todayStart.toISOString(), end: todayEnd.toISOString() }),
+          getMySettings(),
+        ]);
+        const usedTaskHours = todays.reduce((sum, t) => sum + (t.durationHours || 0), 0);
+        const clamp = (n: number, min: number, max: number) => Math.max(min, Math.min(max, n));
+        const overlapHours = (startIso?: string | null, endIso?: string | null): number => {
+          if (!startIso || !endIso) return 0;
+          const s = new Date(startIso);
+          const e = new Date(endIso);
+          const start = Math.max(s.getTime(), todayStart.getTime());
+          const end = Math.min(e.getTime(), todayEnd.getTime());
+          const ms = Math.max(0, end - start);
+          return ms / (1000 * 60 * 60);
+        };
+        const usedEventHours = (events as any[]).reduce((sum, ev) => sum + overlapHours(ev.event_start, ev.event_end), 0);
+        const used = usedTaskHours + usedEventHours;
+        const weekday = new Date().getDay();
+        const weekdayCapacityHours = (() => {
+          switch (weekday) {
+            case 0: return (settings as any).hours_sun ?? 0;
+            case 1: return (settings as any).hours_mon ?? 0;
+            case 2: return (settings as any).hours_tue ?? 0;
+            case 3: return (settings as any).hours_wed ?? 0;
+            case 4: return (settings as any).hours_thu ?? 0;
+            case 5: return (settings as any).hours_fri ?? 0;
+            case 6: return (settings as any).hours_sat ?? 0;
+            default: return 0;
+          }
+        })();
+        const pct = weekdayCapacityHours > 0 ? (used / weekdayCapacityHours) * 100 : 0;
+        setCapacity(clamp(pct, 0, 100));
+      } catch {
+        // ignore capacity errors
+      }
+    } finally {
+      setLoadingTasks(false);
+    }
+  };
+
+  // When project colors update, components will compute color on the fly via colorFor()
+
+  useEffect(() => {
+    reloadAll();
+    const onChanged = () => reloadAll();
+    window.addEventListener("tasks:changed", onChanged as any);
+    return () => window.removeEventListener("tasks:changed", onChanged as any);
+  }, []);
 
   useEffect(() => {
     const calc = (el: HTMLDivElement | null) => {
@@ -102,6 +253,8 @@ export default function MainPage() {
 
   // Высота секций распределяется чисто через CSS Grid
 
+  // Индикаторы скролла на главной странице отключены
+
   // Полностью блокируем вертикальную прокрутку страницы на этой странице
   useEffect(() => {
     const html = document.documentElement;
@@ -122,13 +275,36 @@ export default function MainPage() {
     };
   }, []);
 
-  const handleSwipe = (id: string, direction: "left" | "right") => {
-    // right = complete, left = delete
+  const handleSwipe = async (id: string, direction: "left" | "right") => {
+    // right = complete, left = delete (пока просто удаляем)
     setTasks(prev => prev.filter(t => t.id !== id));
+    const apiId = Number(id);
+    if (!Number.isNaN(apiId)) {
+      try {
+        await deleteTask(apiId);
+        window.dispatchEvent(new CustomEvent("tasks:changed", { detail: { type: "deleted", id: apiId } }));
+      } catch {}
+    }
+  };
+
+  const handleSwipeIn = async (
+    id: string,
+    setList: React.Dispatch<React.SetStateAction<Task[]>>,
+    direction: "left" | "right"
+  ) => {
+    setList(prev => prev.filter(t => t.id !== id));
+    const apiId = Number(id);
+    if (!Number.isNaN(apiId)) {
+      try {
+        await deleteTask(apiId);
+        window.dispatchEvent(new CustomEvent("tasks:changed", { detail: { type: "deleted", id: apiId } }));
+      } catch {}
+    }
   };
 
   return (
       <div className="flex-1 min-h-0 overflow-hidden flex flex-col py-1">
+        <div className="mb-1 text-xs text-default-500">{loadingTasks ? "Загрузка задач…" : null}</div>
         <div className="mb-2 grid grid-cols-2 items-end gap-2">
           <div className="col-span-1 font-extrabold text-2xl md:text-4xl tracking-tight">{leftLabel}</div>
           <div className="col-span-1 w-full">
@@ -158,11 +334,24 @@ export default function MainPage() {
                 {tasks.length}
               </span>
             </div>
-            <div className="rounded-xl border border-default p-2 overflow-hidden flex-1 min-h-0">
+            <div className="relative rounded-xl border border-default p-2 overflow-hidden flex-1 min-h-0">
               <div className="h-full overflow-y-auto overflow-x-hidden touch-pan-y overscroll-y-contain">
                 {tasks.map((task) => (
                   <div key={task.id} className="mb-3 last:mb-0">
-                    <SwipeableTask task={task} onSwipe={handleSwipe} />
+                    <SwipeableTask task={task} projectColor={colorFor(task.projectId)} onSwipe={handleSwipe} onEdit={() => {
+                      const parts = (task.date || "").split("-");
+                      const deadline = parts.length === 3 ? new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2])) : null;
+                      openTaskSheet({
+                        id: Number(task.id),
+                        title: task.title,
+                        description: task.description,
+                        priority: task.priority,
+                        importance: task.importance,
+                        projectId: task.projectId ?? null,
+                        deadline,
+                        kind: "task",
+                      });
+                    }} />
                   </div>
                 ))}
                 {tasks.length === 0 && (
@@ -187,7 +376,7 @@ export default function MainPage() {
               <span className="text-default-500">{showOverdue ? "▾" : "▸"}</span>
             </div>
             {showOverdue && (
-              <div className="rounded-xl border border-default p-2 overflow-hidden">
+              <div className="relative rounded-xl border border-default p-2 overflow-hidden">
                 <div
                   ref={overdueListRef}
                   className="overflow-y-auto overflow-x-hidden touch-pan-y overscroll-y-contain"
@@ -195,7 +384,11 @@ export default function MainPage() {
                 >
                   {overdueTasks.map((task) => (
                     <div key={task.id} className="task-item mb-3 last:mb-0">
-                      <SwipeableTask task={task} onSwipe={(id) => setOverdueTasks((prev) => prev.filter((t) => t.id !== id))} />
+                      <SwipeableTask
+                        task={task}
+                        projectColor={colorFor(task.projectId)}
+                        onSwipe={(id, dir) => handleSwipeIn(id, setOverdueTasks, dir)}
+                      />
                     </div>
                   ))}
                   {overdueTasks.length === 0 && (
@@ -221,7 +414,7 @@ export default function MainPage() {
               <span className="text-default-500">{showUpcoming ? "▾" : "▸"}</span>
             </div>
             {showUpcoming && (
-              <div className="rounded-xl border border-default p-2 overflow-hidden">
+              <div className="relative rounded-xl border border-default p-2 overflow-hidden">
                 <div
                   ref={upcomingListRef}
                   className="overflow-y-auto overflow-x-hidden touch-pan-y overscroll-y-contain"
@@ -229,7 +422,11 @@ export default function MainPage() {
                 >
                   {upcomingTasks.map((task) => (
                     <div key={task.id} className="task-item mb-3 last:mb-0">
-                      <SwipeableTask task={task} onSwipe={(id) => setUpcomingTasks((prev) => prev.filter((t) => t.id !== id))} />
+                      <SwipeableTask
+                        task={task}
+                        projectColor={colorFor(task.projectId)}
+                        onSwipe={(id, dir) => handleSwipeIn(id, setUpcomingTasks, dir)}
+                      />
                     </div>
                   ))}
                   {upcomingTasks.length === 0 && (
@@ -246,7 +443,7 @@ export default function MainPage() {
 
 // Перетаскивание задач отключено, ниже — только свайпы
 
-function SwipeableTask({ task, onSwipe, disableSwipe = false, onLongPressStart }: { task: Task; onSwipe: (id: string, dir: "left" | "right") => void; disableSwipe?: boolean; onLongPressStart?: (e: PointerEvent | MouseEvent | TouchEvent) => void }) {
+function SwipeableTask({ task, projectColor, onSwipe, onEdit, disableSwipe = false, onLongPressStart }: { task: Task; projectColor: string; onSwipe: (id: string, dir: "left" | "right") => void; onEdit?: () => void; disableSwipe?: boolean; onLongPressStart?: (e: PointerEvent | MouseEvent | TouchEvent) => void }) {
   const threshold = 96;
   const x = useMotionValue(0);
   const leftOpacity = useTransform(x, [0, 64], [0, 1]);
@@ -290,7 +487,7 @@ function SwipeableTask({ task, onSwipe, disableSwipe = false, onLongPressStart }
         style={{ x }}
         onTap={() => {
           if (startedDirection !== "horizontal") {
-            openTaskSheet({ title: task.title });
+            if (onEdit) onEdit(); else openTaskSheet({ title: task.title });
           }
         }}
         onPointerDown={(e) => {
@@ -329,13 +526,13 @@ function SwipeableTask({ task, onSwipe, disableSwipe = false, onLongPressStart }
         {/* colored project corner */}
         <span
           className="pointer-events-none absolute left-0 top-0 h-0 w-0 border-r-[14px] border-t-[14px] border-r-transparent rounded-tl-lg"
-          style={{ borderTopColor: task.projectColor }}
+          style={{ borderTopColor: projectColor }}
         />
         <div className="flex items-start justify-between gap-3">
           <div className="text-sm leading-snug text-foreground select-none">
             {task.title}
           </div>
-          <div className="shrink-0 pl-2 text-xs text-default-500">{task.date}</div>
+          <div className="shrink-0 pl-2 text-xs text-default-500">{formatShortDate(task.date)}</div>
         </div>
         <div className="pointer-events-none absolute left-3 right-2 flex items-center gap-3" style={{ bottom: 2 }}>
           <div className="flex items-center">

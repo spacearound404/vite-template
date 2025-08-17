@@ -1,50 +1,83 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Input } from "@heroui/input";
 import { Button } from "@heroui/button";
 import DefaultLayout from "@/layouts/default";
 import { useTaskSheet } from "@/provider";
+import { createProject, getProjects, getTasks, Project, Task } from "@/lib/api";
 import React from "react";
 
-type Project = { id: string; name: string; color: string; tasks: { id: string; title: string; date: string }[] };
+type ProjectVM = Project & { tasks: Task[] };
 
-const initialProjects: Project[] = [
-  {
-    id: "p1",
-    name: "Дом",
-    color: "#BBF7D0",
-    tasks: [
-      { id: "t1", title: "Покупки в магазин", date: "1.09" },
-      { id: "t2", title: "Убраться на кухне", date: "2.09" },
-    ],
-  },
-  {
-    id: "p2",
-    name: "Работа",
-    color: "#BFDBFE",
-    tasks: [
-      { id: "t3", title: "Согласовать ТЗ", date: "3.09" },
-      { id: "t4", title: "Встреча с клиентом", date: "4.09" },
-      { id: "t5", title: "Подготовить отчёт", date: "5.09" },
-    ],
-  },
-  {
-    id: "p3",
-    name: "Личное",
-    color: "#FECACA",
-    tasks: [
-      { id: "t6", title: "Спортзал", date: "6.09" },
-    ],
-  },
-];
+function weightLevel(x?: "low" | "medium" | "high") {
+  return x === "high" ? 2 : x === "medium" ? 1 : 0;
+}
+function dateKey(s?: string | null) {
+  if (!s) return Number.MAX_SAFE_INTEGER;
+  const t = Date.parse(s);
+  return Number.isNaN(t) ? Number.MAX_SAFE_INTEGER : t;
+}
+function compareTasks(a: Task, b: Task) {
+  const dk = dateKey(a.deadline as any) - dateKey(b.deadline as any);
+  if (dk !== 0) return dk;
+  const p = weightLevel(b.priority as any) - weightLevel(a.priority as any);
+  if (p !== 0) return p;
+  return weightLevel(b.importance as any) - weightLevel(a.importance as any);
+}
+function formatShortDate(iso?: string | null) {
+  if (!iso) return "";
+  const parts = iso.split("-");
+  if (parts.length !== 3) return "";
+  const d = String(Number(parts[2]));
+  const m = String(Number(parts[1])).padStart(2, "0");
+  return `${d}.${m}`;
+}
 
 export default function TagsPage() {
-  const [projects, setProjects] = useState<Project[]>(initialProjects);
+  const [projects, setProjects] = useState<ProjectVM[]>([]);
   const [openIds, setOpenIds] = useState<Set<string>>(new Set());
   const [isSheetOpen, setIsSheetOpen] = useState(false);
   const [newName, setNewName] = useState("");
   const [newColor, setNewColor] = useState("#FECACA");
   const { openTaskSheet } = useTaskSheet();
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        setLoading(true);
+        const projs = await getProjects();
+        const items: ProjectVM[] = [];
+        for (const p of projs) {
+          const tasks = (await getTasks({ project_id: p.id })).sort(compareTasks);
+          items.push({ ...p, tasks });
+        }
+        if (!cancelled) setProjects(items);
+      } catch (e: any) {
+        if (!cancelled) setError(e?.message || "load error");
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    const onTasks = (e: any) => {
+      const saved = e?.detail?.task as Task | undefined;
+      if (!saved) return;
+      setProjects((prev) => {
+        const pid = (saved as any).project_id ?? null;
+        return prev.map((p) => {
+          if (p.id !== pid) return p;
+          const exists = p.tasks.some((t) => t.id === saved.id);
+          const nextTasks = exists ? p.tasks.map((t) => (t.id === saved.id ? saved : t)) : [saved, ...p.tasks];
+          nextTasks.sort(compareTasks);
+          return { ...p, tasks: nextTasks };
+        });
+      });
+    };
+    window.addEventListener("tasks:changed", onTasks as any);
+    return () => { cancelled = true; window.removeEventListener("tasks:changed", onTasks as any); };
+  }, []);
 
   const colors = useMemo(
     () => [
@@ -65,15 +98,12 @@ export default function TagsPage() {
     });
   };
 
-  const createProject = () => {
+  const handleCreateProject = async () => {
     if (!newName.trim()) return;
-    const newProject: Project = {
-      id: Math.random().toString(36).slice(2),
-      name: newName.trim(),
-      color: newColor,
-      tasks: [],
-    };
-    setProjects(prev => [newProject, ...prev]);
+    const created = await createProject({ name: newName.trim(), color: newColor });
+    setProjects(prev => [{ ...created, tasks: [] }, ...prev]);
+    // notify others (e.g., task modal) about new project
+    window.dispatchEvent(new CustomEvent("projects:changed", { detail: created }));
     setNewName("");
     setNewColor(colors[0]);
     setIsSheetOpen(false);
@@ -86,6 +116,10 @@ export default function TagsPage() {
           <div className="flex items-center gap-2">
             <div className="font-extrabold text-2xl">Проекты</div>
             <span className="grid h-6 w-6 place-items-center rounded-full bg-default-200 text-xs text-default-600">{totalTasks}</span>
+          </div>
+          <div className="ml-auto flex items-center gap-2 text-xs">
+            {loading && <span className="text-default-500">Загрузка…</span>}
+            {error && <span className="text-red-500">{error}</span>}
           </div>
           <button
             aria-label="Добавить проект"
@@ -126,17 +160,34 @@ export default function TagsPage() {
                       )}
                       {p.tasks.map((t) => (
                         <div key={t.id} className="mb-3 last:mb-0">
-                          <div className="relative z-10 rounded-lg border border-default bg-background p-3 shadow-sm select-none cursor-pointer" onClick={() => openTaskSheet({ title: t.title })}>
+                          <div
+                            className="relative z-10 rounded-lg border border-default bg-background p-3 shadow-sm select-none cursor-pointer"
+                            onClick={() => {
+                              const d = (t as any).deadline as string | undefined;
+                              const parts = d ? d.split("-") : [];
+                              const deadline = parts.length === 3 ? new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2])) : null;
+                              openTaskSheet({
+                                id: Number(t.id),
+                                title: t.title,
+                                description: (t as any).description ?? "",
+                                priority: (t as any).priority ?? "medium",
+                                importance: (t as any).importance ?? "medium",
+                                projectId: (t as any).project_id ?? p.id,
+                                deadline,
+                                kind: "task",
+                              });
+                            }}
+                          >
                             <div className="flex items-start justify-between gap-3">
                               <div className="text-sm leading-snug text-foreground select-none">{t.title}</div>
-                              <div className="shrink-0 pl-2 text-xs text-default-500">{t.date}</div>
+                              <div className="shrink-0 pl-2 text-xs text-default-500">{formatShortDate((t as any).deadline as any)}</div>
                             </div>
                             <div className="pointer-events-none absolute left-3 right-2 flex items-center gap-3" style={{ bottom: 2 }}>
                               <div className="flex items-center">
-                                <LevelBar level={"medium"} />
+                                <LevelBar level={((t as any).priority ?? "medium")} />
                               </div>
                               <div className="flex items-center">
-                                <LevelBar level={"medium"} />
+                                <LevelBar level={((t as any).importance ?? "medium")} />
                               </div>
                             </div>
                           </div>
@@ -189,7 +240,7 @@ export default function TagsPage() {
                   </div>
                 </div>
                 <div className="pt-2">
-                  <Button color="primary" onClick={createProject} className="w-full">Создать</Button>
+                  <Button onClick={handleCreateProject} className="w-full bg-black text-white">Создать</Button>
                 </div>
               </div>
             </motion.div>

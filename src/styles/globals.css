@@ -14,3 +14,10 @@
 html, body {
   -webkit-tap-highlight-color: transparent;
 }
+
+/* Force remove inner border for HeroUI Dropdown content and menu on Projects page */
+[data-slot="content"],
+[data-slot="base"][data-popover-content] {
+  border: 0 !important;
+  border-color: transparent !important;
+}

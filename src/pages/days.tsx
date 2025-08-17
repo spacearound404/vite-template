@@ -6,23 +6,17 @@ import { Button } from "@heroui/button";
 import { parseDate, getLocalTimeZone, today } from "@internationalized/date";
 import DefaultLayout from "@/layouts/default";
 import { useTaskSheet } from "@/provider";
+import { getEvents, createEvent, getProjects, getTasks, getMySettings } from "@/lib/api";
 
-type EventItem = { id: string; title: string; color: string; start: Date; end: Date };
+type EventItem = { id: string; title: string; start: Date; end: Date; projectId: number | null };
+type DayInfo = { tasksCount: number; capacityPct: number };
 
 export default function DaysPage() {
   const { openTaskSheet, setTodayEventsCount } = useTaskSheet();
   const [mode, setMode] = useState<"hours" | "days">("hours");
-  const [events, setEvents] = useState<EventItem[]>(() => {
-    const today = startOfDay(new Date());
-    const mk = (h: number, m: number) => new Date(today.getFullYear(), today.getMonth(), today.getDate(), h, m, 0, 0);
-    const tomorrow = startOfDay(new Date(today.getTime() + 24 * 3600 * 1000));
-    const mkT = (h: number, m: number) => new Date(tomorrow.getFullYear(), tomorrow.getMonth(), tomorrow.getDate(), h, m, 0, 0);
-    return [
-      { id: "e1", title: "Встреча", color: "#BFDBFE", start: mk(10, 0), end: mk(11, 30) },
-      { id: "e2", title: "Тренировка", color: "#BBF7D0", start: mk(18, 0), end: mk(19, 0) },
-      { id: "e3", title: "Звонок", color: "#FDE68A", start: mkT(9, 15), end: mkT(9, 45) },
-    ];
-  });
+  const [events, setEvents] = useState<EventItem[]>([]);
+  const [dailyInfo, setDailyInfo] = useState<Record<string, DayInfo>>({});
+  const [loading, setLoading] = useState(false);
   const [selectedDate, setSelectedDate] = useState<Date>(() => startOfDay(new Date()));
   const [sheetOpen, setSheetOpen] = useState(false);
   const [newEvent, setNewEvent] = useState<{ dayKey: string; start: Date; end: Date } | null>(null);
@@ -33,6 +27,7 @@ export default function DaysPage() {
     return d;
   });
   const monthsBarRef = useRef<HTMLDivElement | null>(null);
+  const [projectColors, setProjectColors] = useState<Record<number, string>>({});
 
   const hours = useMemo(() => Array.from({ length: 24 }, (_, i) => i), []);
   const HOUR_PX = 64; // высота часа в пикселях (увеличено для крупных блоков)
@@ -45,6 +40,10 @@ export default function DaysPage() {
   const dateInputRef = useRef<HTMLInputElement | null>(null);
   const [now, setNow] = useState<Date>(new Date());
   const hasAutoScrolledRef = useRef(false);
+  const [hasHiddenEventsTop, setHasHiddenEventsTop] = useState(false);
+  const [hasHiddenEventsBottom, setHasHiddenEventsBottom] = useState(false);
+  const [hiddenTopCount, setHiddenTopCount] = useState(0);
+  const [hiddenBottomCount, setHiddenBottomCount] = useState(0);
 
   const daysList = useMemo(() => [selectedDate], [selectedDate]);
 
@@ -52,6 +51,106 @@ export default function DaysPage() {
   const selectedDateValue = useMemo(() => {
     return parseDate(`${selectedDate.getFullYear()}-${String(selectedDate.getMonth() + 1).padStart(2, '0')}-${String(selectedDate.getDate()).padStart(2, '0')}`);
   }, [selectedDate]);
+
+  // Load project colors
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const projs = await getProjects();
+        if (cancelled) return;
+        const map: Record<number, string> = {};
+        for (const p of projs) map[p.id] = (p as any).color as string;
+        setProjectColors(map);
+      } catch {}
+    })();
+    const onProjChanged = async () => {
+      try {
+        const projs = await getProjects();
+        const map: Record<number, string> = {};
+        for (const p of projs) map[p.id] = (p as any).color as string;
+        setProjectColors(map);
+      } catch {}
+    };
+    window.addEventListener('projects:changed', onProjChanged as any);
+    return () => { cancelled = true; window.removeEventListener('projects:changed', onProjChanged as any); };
+  }, []);
+
+  const colorFor = (pid: number | null | undefined) => (pid != null && projectColors[pid] ? projectColors[pid] : '#BFDBFE');
+
+  useEffect(() => {
+    let cancelled = false;
+    const startOfDay = (d: Date) => { const x = new Date(d); x.setHours(0,0,0,0); return x; };
+    const endOfDay = (d: Date) => { const x = new Date(d); x.setHours(23,59,59,999); return x; };
+    const overlapHours = (startIso?: string | null, endIso?: string | null, day: Date = new Date()): number => {
+      if (!startIso || !endIso) return 0;
+      const s = new Date(startIso).getTime();
+      const e = new Date(endIso).getTime();
+      const dayStart = startOfDay(day).getTime();
+      const dayEnd = endOfDay(day).getTime();
+      const start = Math.max(s, dayStart);
+      const end = Math.min(e, dayEnd);
+      const ms = Math.max(0, end - start);
+      return ms / (1000 * 60 * 60);
+    };
+
+    const weekdayCapacity = (settings: any, d: Date) => {
+      const wd = d.getDay();
+      switch (wd) {
+        case 0: return settings.hours_sun ?? 0;
+        case 1: return settings.hours_mon ?? 0;
+        case 2: return settings.hours_tue ?? 0;
+        case 3: return settings.hours_wed ?? 0;
+        case 4: return settings.hours_thu ?? 0;
+        case 5: return settings.hours_fri ?? 0;
+        case 6: return settings.hours_sat ?? 0;
+        default: return 0;
+      }
+    };
+
+    const reload = async () => {
+      try {
+        setLoading(true);
+        // Month range
+        const monthStart = new Date(viewMonth.getFullYear(), viewMonth.getMonth(), 1);
+        const monthEnd = new Date(viewMonth.getFullYear(), viewMonth.getMonth() + 1, 1);
+        const [eventsList, tasksList, settings] = await Promise.all([
+          getEvents({ start: monthStart.toISOString(), end: monthEnd.toISOString() }),
+          getTasks(),
+          getMySettings(),
+        ]);
+        if (cancelled) return;
+        const mappedEvents: EventItem[] = eventsList.map(e => ({ id: String((e as any).id), title: (e as any).title, start: new Date((e as any).event_start!), end: new Date((e as any).event_end!), projectId: (e as any).project_id ?? null }));
+        setEvents(mappedEvents);
+
+        // Build daily info for all days shown in MonthGridV2 later (we cover current month days here)
+        const daysInMonth = new Date(viewMonth.getFullYear(), viewMonth.getMonth() + 1, 0).getDate();
+        const info: Record<string, DayInfo> = {};
+        const tasksOnly = (tasksList as any[]).filter(t => (t.kind ?? 'task') === 'task');
+        for (let dayNum = 1; dayNum <= daysInMonth; dayNum++) {
+          const d = new Date(viewMonth.getFullYear(), viewMonth.getMonth(), dayNum);
+          const key = `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+          const dayStr = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+          const dayTasks = tasksOnly.filter(t => (t.deadline ?? '').startsWith(dayStr));
+          const tasksCount = dayTasks.length;
+          const usedTaskHours = dayTasks.reduce((sum, t) => sum + (t.duration_hours ?? 0), 0);
+          const usedEventHours = mappedEvents.reduce((sum, ev) => sum + overlapHours((ev as any).start?.toISOString?.() ? (ev as any).start.toISOString() : (ev as any).event_start, (ev as any).end?.toISOString?.() ? (ev as any).end.toISOString() : (ev as any).event_end, d), 0);
+          const limit = weekdayCapacity(settings, d);
+          const pct = limit > 0 ? Math.min(100, Math.max(0, (usedTaskHours + usedEventHours) / limit * 100)) : 0;
+          info[key] = { tasksCount, capacityPct: pct };
+        }
+        setDailyInfo(info);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    };
+    reload();
+
+    const onDataChanged = () => reload();
+    window.addEventListener('tasks:changed', onDataChanged as any);
+    window.addEventListener('projects:changed', onDataChanged as any);
+    return () => { cancelled = true; window.removeEventListener('tasks:changed', onDataChanged as any); window.removeEventListener('projects:changed', onDataChanged as any); };
+  }, [viewMonth]);
 
   useEffect(() => {
     // scroll to selected day
@@ -67,6 +166,13 @@ export default function DaysPage() {
     m.setHours(0, 0, 0, 0);
     setViewMonth(m);
   }, [daysList]);
+
+  // When selected day changes in hours mode, allow auto-scroll to nearest event again
+  useEffect(() => {
+    if (mode === 'hours') {
+      hasAutoScrolledRef.current = false;
+    }
+  }, [selectedDate, mode]);
 
   // Update badge with number of today's events
   useEffect(() => {
@@ -136,6 +242,47 @@ export default function DaysPage() {
       hasAutoScrolledRef.current = true;
     }, 0);
     return () => window.clearTimeout(id);
+  }, [mode, selectedDate, events]);
+
+  // Индикаторы: показываем стрелку сверху, если есть события выше; снизу — если есть события ниже
+  useEffect(() => {
+    if (mode !== 'hours') { setHasHiddenEventsTop(false); setHasHiddenEventsBottom(false); setHiddenTopCount(0); setHiddenBottomCount(0); return; }
+    const cont = containerRef.current;
+    if (!cont) return;
+
+    const compute = () => {
+      const selKey = dayKey(selectedDate);
+      const dayEl = dayRefs.current.get(selKey);
+      if (!dayEl) { setHasHiddenEventsTop(false); setHasHiddenEventsBottom(false); setHiddenTopCount(0); setHiddenBottomCount(0); return; }
+      const dayEvents = events.filter(e => dayKey(e.start) === selKey);
+      if (dayEvents.length === 0) { setHasHiddenEventsTop(false); setHasHiddenEventsBottom(false); setHiddenTopCount(0); setHiddenBottomCount(0); return; }
+
+      const toPx = (minutes: number) => (minutes / 60) * HOUR_PX;
+      const topBoundary = cont.scrollTop;
+      const bottomBoundary = cont.scrollTop + cont.clientHeight;
+      let above = 0;
+      let below = 0;
+      for (const ev of dayEvents) {
+        const evStart = dayEl.offsetTop + toPx(minutesOfDay(ev.start));
+        const evEnd = dayEl.offsetTop + toPx(minutesOfDay(ev.end));
+        if (evEnd < topBoundary - 1) above++;
+        if (evStart > bottomBoundary + 1) below++;
+      }
+      setHasHiddenEventsTop(above > 0);
+      setHasHiddenEventsBottom(below > 0);
+      setHiddenTopCount(above);
+      setHiddenBottomCount(below);
+    };
+
+    compute();
+    const onScroll = () => compute();
+    const onResize = () => compute();
+    cont.addEventListener('scroll', onScroll, { passive: true } as any);
+    window.addEventListener('resize', onResize);
+    return () => {
+      cont.removeEventListener('scroll', onScroll as any);
+      window.removeEventListener('resize', onResize);
+    };
   }, [mode, selectedDate, events]);
 
   // Lock page scroll in days mode so the page doesn't move vertically
@@ -440,6 +587,7 @@ export default function DaysPage() {
             } else {
               next.setDate(next.getDate() - 1);
             }
+            hasAutoScrolledRef.current = false;
             setSelectedDate(startOfDay(next));
           }
         }
@@ -480,6 +628,35 @@ export default function DaysPage() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [selectedDate]);
 
+  const scrollToEvent = (direction: 'up' | 'down') => {
+    const cont = containerRef.current;
+    if (!cont) return;
+    const selKey = dayKey(selectedDate);
+    const dayEl = dayRefs.current.get(selKey);
+    if (!dayEl) return;
+    const toPx = (minutes: number) => (minutes / 60) * HOUR_PX;
+    const dayEvents = events
+      .filter((e) => dayKey(e.start) === selKey)
+      .sort((a, b) => minutesOfDay(a.start) - minutesOfDay(b.start));
+    if (dayEvents.length === 0) return;
+    const topBoundary = cont.scrollTop;
+    const bottomBoundary = cont.scrollTop + cont.clientHeight;
+    if (direction === 'down') {
+      const next = dayEvents.find((ev) => dayEl.offsetTop + toPx(minutesOfDay(ev.start)) > bottomBoundary + 1);
+      if (!next) return;
+      const targetTop = dayEl.offsetTop + toPx(minutesOfDay(next.start));
+      const pad = Math.round(cont.clientHeight * 0.2);
+      cont.scrollTo({ top: Math.max(0, targetTop - pad), behavior: 'smooth' });
+    } else {
+      const prevs = dayEvents.filter((ev) => dayEl.offsetTop + toPx(minutesOfDay(ev.end)) < topBoundary - 1);
+      const prev = prevs.length ? prevs[prevs.length - 1] : null;
+      if (!prev) return;
+      const targetTop = dayEl.offsetTop + toPx(minutesOfDay(prev.start));
+      const pad = Math.round(cont.clientHeight * 0.2);
+      cont.scrollTo({ top: Math.max(0, targetTop - pad), behavior: 'smooth' });
+    }
+  };
+
   return (
     <DefaultLayout>
       <div className="py-2 overflow-hidden">
@@ -518,14 +695,44 @@ export default function DaysPage() {
             animate={{ opacity: 1, scale: 1 }}
             transition={{ duration: 0.18, ease: 'easeOut' }}
           >
-          <div ref={containerRef} className={`relative rounded-xl h-[calc(100vh-140px)] overflow-y-auto overflow-x-hidden overscroll-y-contain select-none ${isSelecting ? 'touch-none overflow-y-hidden' : ''}`}>
+          <div
+            ref={containerRef}
+            className={`relative rounded-xl overflow-y-auto overflow-x-hidden overscroll-y-contain select-none ${isSelecting ? 'touch-none overflow-y-hidden' : ''}`}
+            style={{ height: 'calc(100dvh - var(--bottom-nav-height, 96px) - 90px)' }}
+          >
+            {hasHiddenEventsTop && (
+              <div className="sticky top-2 z-[70] flex justify-center pointer-events-none">
+                <button
+                  type="button"
+                  onClick={() => scrollToEvent('up')}
+                  className="pointer-events-auto inline-flex items-center justify-center gap-2 h-9 px-3 rounded-full bg-default-200 text-default-700 shadow-sm"
+                  aria-label="Прокрутить к предыдущему событию"
+                >
+                  <span className="text-sm leading-none">↑</span>
+                  <span className="text-sm leading-none font-semibold">{hiddenTopCount}</span>
+                </button>
+              </div>
+            )}
             {/* Градиент в начале для индикации скролла вверх */}
             <div className="sticky top-0 z-20 h-4 bg-gradient-to-b from-background to-transparent pointer-events-none" />
             
             <div className="relative">
               {daysList.map((day) => {
                 const key = dayKey(day);
-                const dayEvents = events.filter(e => dayKey(e.start) === key);
+                const dayEvents = events.filter(e => dayKey(e.start) === key).sort((a, b) => a.start.getTime() - b.start.getTime());
+                // Assign columns to overlapping events
+                type Placed = EventItem & { __col: number };
+                const placed: Placed[] = [];
+                const colEndTimes: number[] = [];
+                for (const ev of dayEvents) {
+                  let assigned = -1;
+                  for (let c = 0; c < colEndTimes.length; c++) {
+                    if (colEndTimes[c] <= ev.start.getTime()) { assigned = c; break; }
+                  }
+                  if (assigned === -1) { assigned = colEndTimes.length; colEndTimes.push(ev.end.getTime()); } else { colEndTimes[assigned] = ev.end.getTime(); }
+                  placed.push({ ...ev, __col: assigned });
+                }
+                const totalCols = Math.max(1, ...placed.map(p => p.__col + 1));
                 return (
                   <div key={key} ref={(el) => { if (el) dayRefs.current.set(key, el); }} className="relative px-0 py-3">
                     <div
@@ -554,25 +761,30 @@ export default function DaysPage() {
                           </div>
                         </div>
                       )}
-                      {/* render existing events */}
-                      {dayEvents.map((ev) => (
+                      {/* render existing events side-by-side */}
+                      {placed.map((ev) => (
                         <div
                           key={ev.id}
-                          className="absolute left-12 right-2 rounded-md p-1 text-xs leading-tight overflow-hidden break-words"
+                          className="absolute rounded-md p-1 text-xs leading-tight overflow-hidden break-words border border-default bg-background pl-2"
                           style={{
                             top: `${(minutesOfDay(ev.start) / 60) * HOUR_PX}px`,
                             height: `${((minutesOfDay(ev.end) - minutesOfDay(ev.start)) / 60) * HOUR_PX}px`,
-                            backgroundColor: ev.color,
+                            borderLeft: `4px solid ${colorFor(ev.projectId)}`,
+                            left: `calc(3rem + (${ev.__col} * (100% - 3rem - 0.5rem) / ${totalCols}))`,
+                            width: `calc((100% - 3rem - 0.5rem) / ${totalCols} - 2px)`,
                           }}
                           onClick={() => {
                             if (mode !== 'hours') return;
-                            const durationHours = (minutesOfDay(ev.end) - minutesOfDay(ev.start)) / 60;
                             openTaskSheet({
-                              title: ev.title,
-                              deadline: startOfDay(ev.start),
-                              durationHours: Math.max(0.25, durationHours),
+                              id: Number(ev.id),
                               kind: 'event',
-                            });
+                              title: ev.title,
+                              eventStart: new Date(ev.start),
+                              eventEnd: new Date(ev.end),
+                              eventStartTime: `${String(ev.start.getHours()).padStart(2,'0')}:${String(ev.start.getMinutes()).padStart(2,'0')}`,
+                              eventEndTime: `${String(ev.end.getHours()).padStart(2,'0')}:${String(ev.end.getMinutes()).padStart(2,'0')}`,
+                              projectId: ev.projectId ?? null,
+                            } as any);
                           }}
                         >
                           {ev.title}
@@ -619,6 +831,20 @@ export default function DaysPage() {
             
             {/* Градиент в конце для индикации скролла вниз */}
             <div className="sticky bottom-0 z-20 h-4 bg-gradient-to-t from-background to-transparent pointer-events-none" />
+            {hasHiddenEventsBottom && (
+              <>
+                <button
+                  type="button"
+                  onClick={() => scrollToEvent('down')}
+                  className="fixed left-1/2 z-[70] -translate-x-1/2 inline-flex items-center justify-center gap-2 h-9 px-3 rounded-full bg-default-200 text-default-700 shadow-sm"
+                  style={{ bottom: 'calc(5rem + 3rem + 10px)' }}
+                  aria-label="Прокрутить к следующему событию"
+                >
+                  <span className="text-sm leading-none">↓</span>
+                  <span className="text-sm leading-none font-semibold">{hiddenBottomCount}</span>
+                </button>
+              </>
+            )}
           </div>
           </motion.div>
         ) : (
@@ -638,6 +864,8 @@ export default function DaysPage() {
                     monthDate={viewMonth}
                     todayDate={startOfDay(new Date())}
                     events={events}
+                    projectColors={projectColors}
+                    dailyInfo={dailyInfo}
                     onSelectDay={(d) => { setSelectedDate(startOfDay(d)); setMode('hours'); }}
                   />
                 </div>
@@ -710,7 +938,7 @@ export default function DaysPage() {
                   <DropdownTrigger>
                     <Button size="sm" variant="flat" className="h-8">{({ hours: "По часам", days: "По дням" } as const)[mode]}</Button>
                   </DropdownTrigger>
-                  <DropdownMenu aria-label="calendar-mode" selectedKeys={[mode]} selectionMode="single" onSelectionChange={(keys) => setMode((Array.from(keys)[0] as any) || "hours") }>
+                  <DropdownMenu classNames={{ base: "border-none", list: "border-none" }} aria-label="calendar-mode" selectedKeys={[mode]} selectionMode="single" onSelectionChange={(keys) => setMode((Array.from(keys)[0] as any) || "hours") }>
                     <DropdownItem key="hours">По часам</DropdownItem>
                     <DropdownItem key="days">По дням</DropdownItem>
                   </DropdownMenu>
@@ -736,7 +964,7 @@ export default function DaysPage() {
                   <DropdownTrigger>
                     <Button size="sm" variant="flat" className="h-8">{({ hours: "По часам", days: "По дням" } as const)[mode]}</Button>
                   </DropdownTrigger>
-                  <DropdownMenu aria-label="calendar-mode" selectedKeys={[mode]} selectionMode="single" onSelectionChange={(keys) => setMode((Array.from(keys)[0] as any) || "hours") }>
+                  <DropdownMenu classNames={{ base: "border-none", list: "border-none" }} aria-label="calendar-mode" selectedKeys={[mode]} selectionMode="single" onSelectionChange={(keys) => setMode((Array.from(keys)[0] as any) || "hours") }>
                     <DropdownItem key="hours">По часам</DropdownItem>
                     <DropdownItem key="days">По дням</DropdownItem>
                   </DropdownMenu>
@@ -759,7 +987,19 @@ export default function DaysPage() {
                   {newEvent ? `${formatTime(newEvent.start)} — ${formatTime(newEvent.end)}` : null}
                 </div>
                 {/* Поля названия/цвета можно добавить позже */}
-                <Button className="bg-black text-white" onClick={() => setSheetOpen(false)}>Сохранить</Button>
+                <Button className="bg-black text-white" onClick={async () => {
+                  if (!newEvent) { setSheetOpen(false); return; }
+                  const saved = await createEvent({ title: "Событие", kind: "event", event_start: newEvent.start.toISOString(), event_end: newEvent.end.toISOString() });
+                  // уведомим главную страницу для пересчета capacity
+                  try { window.dispatchEvent(new CustomEvent("tasks:changed", { detail: { type: "created", task: saved } })); } catch {}
+                  setSheetOpen(false);
+                  setNewEvent(null);
+                  // reload current month
+                  const startISO = new Date(viewMonth.getFullYear(), viewMonth.getMonth(), 1).toISOString();
+                  const endISO = new Date(viewMonth.getFullYear(), viewMonth.getMonth() + 1, 1).toISOString();
+                  const list = await getEvents({ start: startISO, end: endISO });
+                  setEvents(list.map(e => ({ id: String(e.id), title: e.title, start: new Date((e as any).event_start!), end: new Date((e as any).event_end!), projectId: (e as any).project_id ?? null })));
+                }}>Сохранить</Button>
               </div>
             </motion.div>
           </>
@@ -786,7 +1026,7 @@ function MonthGrid({ events }: { events: EventItem[] }) {
             <div className="text-xs text-default-500">{inMonth ? dayNum : ""}</div>
             <div className="mt-1 flex flex-wrap gap-1">
               {dayEvents.map((e) => (
-                <span key={e.id} className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: e.color }} />
+                <span key={e.id} className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: '#BFDBFE' }} />
               ))}
             </div>
           </div>
@@ -804,11 +1044,15 @@ function MonthGridV2({
   monthDate,
   todayDate,
   events,
+  projectColors,
+  dailyInfo,
   onSelectDay,
 }: {
   monthDate: Date; // first day of month
   todayDate: Date;
   events: EventItem[];
+  projectColors: Record<number, string>;
+  dailyInfo: Record<string, DayInfo>;
   onSelectDay: (d: Date) => void;
 }) {
   const year = monthDate.getFullYear();
@@ -835,7 +1079,8 @@ function MonthGridV2({
   for (const ev of events) {
     const k = dayKeyStr(ev.start);
     const arr = mapColors.get(k) ?? [];
-    if (arr.length < 4) arr.push(ev.color);
+    const color = ev.projectId != null && projectColors[ev.projectId] ? projectColors[ev.projectId] : '#BFDBFE';
+    if (arr.length < 4) arr.push(color);
     mapColors.set(k, arr);
   }
 
@@ -859,10 +1104,19 @@ function MonthGridV2({
               <div className="w-full flex justify-center text-xs">
                 <span className={`${isToday ? 'inline-grid place-items-center h-6 w-6 rounded-full bg-black text-white' : ''}`}>{d.getDate()}</span>
               </div>
-              <div className="mt-auto w-full flex gap-1 flex-wrap items-center justify-center">
-                {dots.map((c, i) => (
-                  <span key={i} className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: c }} />
-                ))}
+              <div className="mt-auto w-full flex flex-col items-center justify-center pb-1">
+                {(() => {
+                  const key = `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+                  const info = dailyInfo[key];
+                  const tasksCount = info?.tasksCount ?? 0;
+                  const pct = info?.capacityPct ?? 0;
+                  return (
+                    <>
+                      <span className="text-[10px] leading-tight text-default-500">{tasksCount} задач</span>
+                      <span className="text-[10px] leading-tight font-semibold" style={{ color: pct >= 100 ? '#ef4444' : pct >= 80 ? '#f59e0b' : '#6b7280' }}>{Math.round(pct)}%</span>
+                    </>
+                  );
+                })()}
               </div>
             </button>
           );
