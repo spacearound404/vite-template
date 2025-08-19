@@ -6,7 +6,7 @@ import { Button } from "@heroui/button";
 import { parseDate, getLocalTimeZone, today } from "@internationalized/date";
 import DefaultLayout from "@/layouts/default";
 import { useTaskSheet } from "@/provider";
-import { getEvents, createEvent, getProjects, getTasks, getMySettings } from "@/lib/api";
+import { getEventsCached, createEvent, getProjectsCached, getTasksCached, getMySettingsCached, getEvents } from "@/lib/api";
 
 type EventItem = { id: string; title: string; start: Date; end: Date; projectId: number | null };
 type DayInfo = { tasksCount: number; capacityPct: number };
@@ -57,7 +57,7 @@ export default function DaysPage() {
     let cancelled = false;
     (async () => {
       try {
-        const projs = await getProjects();
+        const projs = await getProjectsCached();
         if (cancelled) return;
         const map: Record<number, string> = {};
         for (const p of projs) map[p.id] = (p as any).color as string;
@@ -66,7 +66,7 @@ export default function DaysPage() {
     })();
     const onProjChanged = async () => {
       try {
-        const projs = await getProjects();
+        const projs = await getProjectsCached();
         const map: Record<number, string> = {};
         for (const p of projs) map[p.id] = (p as any).color as string;
         setProjectColors(map);
@@ -115,9 +115,9 @@ export default function DaysPage() {
         const monthStart = new Date(viewMonth.getFullYear(), viewMonth.getMonth(), 1);
         const monthEnd = new Date(viewMonth.getFullYear(), viewMonth.getMonth() + 1, 1);
         const [eventsList, tasksList, settings] = await Promise.all([
-          getEvents({ start: monthStart.toISOString(), end: monthEnd.toISOString() }),
-          getTasks(),
-          getMySettings(),
+          getEventsCached({ start: monthStart.toISOString(), end: monthEnd.toISOString() }),
+          getTasksCached(),
+          getMySettingsCached(),
         ]);
         if (cancelled) return;
         const mappedEvents: EventItem[] = eventsList.map(e => ({ id: String((e as any).id), title: (e as any).title, start: new Date((e as any).event_start!), end: new Date((e as any).event_end!), projectId: (e as any).project_id ?? null }));
@@ -979,7 +979,7 @@ export default function DaysPage() {
         {sheetOpen && (
           <>
             <motion.div className="fixed inset-0 z-[65] bg-black/40" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => { setSheetOpen(false); setNewEvent(null); }} />
-            <motion.div className="fixed left-0 right-0 bottom-0 z-[70] h-[80vh] rounded-t-2xl bg-background shadow-large" initial={{ y: "100%" }} animate={{ y: 0 }} exit={{ y: "100%" }} transition={{ type: "spring", stiffness: 300, damping: 30 }}>
+            <motion.div className="fixed left-0 right-0 bottom-0 z-[70] h-[88vh] max-h-[88vh] rounded-t-2xl bg-background shadow-large" initial={{ y: "100%" }} animate={{ y: 0 }} exit={{ y: "100%" }} transition={{ type: "spring", stiffness: 300, damping: 30 }}>
               <div className="mx-auto my-2 h-1.5 w-12 rounded-full bg-default-300" />
               <div className="h-[calc(80vh-16px)] overflow-y-auto p-4 space-y-3">
                 <div className="text-lg font-semibold">Новое событие</div>

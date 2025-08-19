@@ -3,7 +3,7 @@ import DefaultLayout from "@/layouts/default";
 import { Dropdown, DropdownItem, DropdownMenu, DropdownTrigger } from "@heroui/dropdown";
 import { Button } from "@heroui/button";
 import { Input } from "@heroui/input";
-import { getMySettings, updateMySettings, UserSettings, getProjects, deleteProject, Project } from "@/lib/api";
+import { getMySettingsCached, updateMySettings, UserSettings, getProjectsCached, deleteProject, Project } from "@/lib/api";
 
 type ModelKey = "gpt-5" | "gpt-5-thinking" | "gpt-4o";
 
@@ -42,7 +42,7 @@ export default function OptPage() {
     (async () => {
       try {
         setLoading(true);
-        const s = await getMySettings();
+        const s = await getMySettingsCached();
         if (cancelled) return;
         setHoursByDay([
           s.hours_mon,
@@ -53,7 +53,7 @@ export default function OptPage() {
           s.hours_sat,
           s.hours_sun,
         ]);
-        const projs = await getProjects();
+        const projs = await getProjectsCached();
         if (!cancelled) {
           setProjects(projs);
           setSelectedProjectId(projs.length ? projs[0].id : null);

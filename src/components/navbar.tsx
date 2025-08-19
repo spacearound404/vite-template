@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
-import { motion } from "framer-motion";
+import { LayoutGroup, motion } from "framer-motion";
 import { useTaskSheet } from "@/provider";
 import { BiHomeAlt2 } from "react-icons/bi";
 import { PiTagSimpleBold } from "react-icons/pi";
@@ -112,6 +112,7 @@ export const Navbar = () => {
   const location = useLocation();
   const { openTaskSheet } = useTaskSheet();
   const navRef = useRef<HTMLDivElement | null>(null);
+  
 
   const pathToKey = useMemo<Record<string, string>>(
     () => ({
@@ -142,7 +143,7 @@ export const Navbar = () => {
     setCurrentKey(routeKey);
   }, [routeKey]);
 
-  // no manual cursor measurements anymore; use shared layout animation instead
+  // indicator handled by Framer Motion shared layout; no manual measurements
 
   const handleChange = useCallback(
     (key: React.Key) => {
@@ -181,28 +182,36 @@ export const Navbar = () => {
     <>
       <nav ref={navRef} className={`fixed bottom-4 left-1/2 transform -translate-x-1/2 z-50 bg-white/10 backdrop-blur-2xl shadow-lg w-[calc(100%-24px)] max-w-[calc(100vw-24px)] ${currentKey === 'days' ? 'rounded-b-2xl' : 'rounded-2xl'}`}>
         <div className="w-full py-2">
-          <div className="relative grid grid-cols-5 items-center gap-4 px-4 py-3">
-            {order.map((k) => {
-              const isActive = currentKey === k;
-              const onClick = () => handleChange(k);
-              const Icon = k === "main" ? BiHomeAlt2 : k === "tags" ? PiTagSimpleBold : k === "add" ? FaPlus : k === "days" ? MdOutlineCalendarViewMonth : TbSettings2;
-              return (
-                <div key={k} className="relative grid place-items-center">
-                  {isActive && (
-                    <motion.div
-                      layoutId="nav-cursor"
-                      className="absolute inset-0 m-1 rounded-md bg-black"
-                      transition={{ type: "spring", stiffness: 320, damping: 30, mass: 0.9 }}
-                    />
-                  )}
-                  <button className="relative z-10 grid h-10 w-10 place-items-center rounded-md transition-colors duration-200 hover:bg-default-100" onClick={onClick}>
-                    <Icon className={isActive ? "text-white" : "text-foreground"} size={k === "add" ? 24 : 20} />
-                    {k === "days" && <CalendarBadge />}
-                  </button>
-                </div>
-              );
-            })}
-          </div>
+          <LayoutGroup id="bottom-navbar">
+            <div className="relative grid grid-cols-5 items-center gap-4 px-4 py-3">
+              {order.map((k) => {
+                const isActive = currentKey === k;
+                const onClick = () => handleChange(k);
+                const Icon = k === "main" ? BiHomeAlt2 : k === "tags" ? PiTagSimpleBold : k === "add" ? FaPlus : k === "days" ? MdOutlineCalendarViewMonth : TbSettings2;
+                return (
+                  <div key={k} className="relative grid place-items-center">
+                    <div className="relative h-10 w-10">
+                      {isActive && (
+                        <motion.div
+                          layoutId="nav-cursor"
+                          initial={false}
+                          className="absolute inset-0 m-1 rounded-md bg-black !opacity-100"
+                          transition={{ type: "tween", duration: 0.25, ease: "easeOut" }}
+                        />
+                      )}
+                      <button
+                        className={`relative z-10 grid h-full w-full place-items-center rounded-md transition-colors duration-200 ${isActive ? 'hover:bg-transparent' : 'hover:bg-default-100'}`}
+                        onClick={onClick}
+                      >
+                        <Icon className={isActive ? "text-white" : "text-foreground"} size={k === "add" ? 24 : 20} />
+                        {k === "days" && <CalendarBadge />}
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </LayoutGroup>
         </div>
       </nav>
 

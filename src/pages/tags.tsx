@@ -4,7 +4,7 @@ import { Input } from "@heroui/input";
 import { Button } from "@heroui/button";
 import DefaultLayout from "@/layouts/default";
 import { useTaskSheet } from "@/provider";
-import { createProject, getProjects, getTasks, Project, Task } from "@/lib/api";
+import { createProject, getProjectsCached, getTasksCached, Project, Task } from "@/lib/api";
 import React from "react";
 
 type ProjectVM = Project & { tasks: Task[] };
@@ -48,10 +48,10 @@ export default function TagsPage() {
     (async () => {
       try {
         setLoading(true);
-        const projs = await getProjects();
+        const projs = await getProjectsCached();
         const items: ProjectVM[] = [];
         for (const p of projs) {
-          const tasks = (await getTasks({ project_id: p.id })).sort(compareTasks);
+          const tasks = (await getTasksCached({ project_id: p.id })).sort(compareTasks);
           items.push({ ...p, tasks });
         }
         if (!cancelled) setProjects(items);
@@ -213,14 +213,14 @@ export default function TagsPage() {
               onClick={() => setIsSheetOpen(false)}
             />
             <motion.div
-              className="fixed left-0 right-0 bottom-0 z-50 h-[40vh] rounded-t-2xl bg-background shadow-large"
+              className="fixed left-0 right-0 bottom-0 z-50 h-[60vh] max-h-[70vh] rounded-t-2xl bg-background shadow-large"
               initial={{ y: "100%" }}
               animate={{ y: 0 }}
               exit={{ y: "100%" }}
               transition={{ type: "spring", stiffness: 300, damping: 30 }}
             >
               <div className="mx-auto my-2 h-1.5 w-12 rounded-full bg-default-300" />
-              <div className="h-[calc(40vh-16px)] overflow-y-auto p-4 space-y-4">
+              <div className="h-[calc(60vh-16px)] overflow-y-auto p-4 space-y-4">
                 <div className="text-lg font-semibold">Создать проект</div>
                 <div>
                   <label className="mb-1 block text-xs text-default-500">Название</label>

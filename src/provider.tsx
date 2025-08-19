@@ -9,7 +9,7 @@ import { Button } from "@heroui/button";
 import { Dropdown, DropdownItem, DropdownMenu, DropdownTrigger } from "@heroui/dropdown";
 import { DatePicker } from "@heroui/react";
 import { parseDate } from "@internationalized/date";
-import { createTask, updateTask, deleteTask, getProjects, Project, getTasks, getEvents, getMySettings } from "@/lib/api";
+import { createTask, updateTask, deleteTask, getProjectsCached, Project, getTasksCached, getEventsCached, getMySettingsCached } from "@/lib/api";
 
 declare module "@react-types/shared" {
   interface RouterConfig {
@@ -85,7 +85,7 @@ export function Provider({ children }: { children: React.ReactNode }) {
     let cancelled = false;
     (async () => {
       try {
-        const projs = await getProjects();
+        const projs = await getProjectsCached();
         if (!cancelled) setProjectsList(projs);
       } catch {}
     })();
@@ -99,7 +99,7 @@ export function Provider({ children }: { children: React.ReactNode }) {
       } else {
         // fallback: refetch
         (async () => {
-          try { const projs = await getProjects(); setProjectsList(projs); } catch {}
+          try { const projs = await getProjectsCached(); setProjectsList(projs); } catch {}
         })();
       }
     };
@@ -194,9 +194,9 @@ export function Provider({ children }: { children: React.ReactNode }) {
         const start = new Date(form.deadline.getFullYear(), form.deadline.getMonth(), form.deadline.getDate());
         const end = new Date(form.deadline.getFullYear(), form.deadline.getMonth(), form.deadline.getDate(), 23, 59, 59, 999);
         const [tasks, events, settings] = await Promise.all([
-          getTasks({ day: dayStr }),
-          getEvents({ start: start.toISOString(), end: end.toISOString() }),
-          getMySettings(),
+          getTasksCached({ day: dayStr }),
+          getEventsCached({ start: start.toISOString(), end: end.toISOString() }),
+          getMySettingsCached(),
         ]);
         if (aborted) return;
         const existingTasks = (tasks as any[]).filter(t => (t.kind ?? "task") === "task");
@@ -246,7 +246,7 @@ export function Provider({ children }: { children: React.ReactNode }) {
                 onClick={closeTaskSheet}
               />
               <motion.div
-                className="fixed left-0 right-0 bottom-0 z-[70] h-[80vh] rounded-t-2xl bg-background shadow-large"
+                className="fixed left-0 right-0 bottom-0 z-[70] h-[92vh] max-h-[92vh] rounded-t-2xl bg-background shadow-large"
                 initial={{ y: "100%" }}
                 animate={{ y: 0 }}
                 exit={{ y: "100%" }}
@@ -258,7 +258,7 @@ export function Provider({ children }: { children: React.ReactNode }) {
                 }}
               >
                 <div className="mx-auto my-2 h-1.5 w-12 rounded-full bg-default-300" />
-                <div className="h-[calc(80vh-16px)] overflow-y-auto p-4 space-y-4">
+                <div className="h-[calc(92vh-16px)] overflow-y-auto p-4 space-y-4">
                   <div>
                     <Input
                       label="Название задачи"

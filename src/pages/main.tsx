@@ -2,7 +2,7 @@ import { useMemo, useRef, useState, useEffect } from "react";
 import { animate, motion, useMotionValue, useTransform } from "framer-motion";
 import { Progress } from "@heroui/react";
 import { useTaskSheet } from "@/provider";
-import { getTasks, deleteTask, getProjects, getEvents, getMySettings } from "@/lib/api";
+import { getTasksCached, deleteTask, getProjectsCached, getEventsCached, getMySettingsCached } from "@/lib/api";
 
 type Task = {
   id: string;
@@ -92,7 +92,7 @@ export default function MainPage() {
     let cancelled = false;
     (async () => {
       try {
-        const projs = await getProjects();
+        const projs = await getProjectsCached();
         if (cancelled) return;
         const map: Record<number, string> = {};
         for (const p of projs) map[p.id] = p.color as any;
@@ -101,7 +101,7 @@ export default function MainPage() {
     })();
     const onProjChanged = async () => {
       try {
-        const projs = await getProjects();
+        const projs = await getProjectsCached();
         const map: Record<number, string> = {};
         for (const p of projs) map[p.id] = p.color as any;
         setProjectColors(map);
@@ -119,7 +119,7 @@ export default function MainPage() {
   const reloadAll = async () => {
     setLoadingTasks(true);
     try {
-      const listPromise = getTasks();
+      const listPromise = getTasksCached();
       const toLocalDate = (iso?: string): Date | null => {
         if (!iso) return null;
         const parts = iso.split("-");
@@ -174,8 +174,8 @@ export default function MainPage() {
       // Capacity calculation (tasks + events vs settings for today)
       try {
         const [events, settings] = await Promise.all([
-          getEvents({ start: todayStart.toISOString(), end: todayEnd.toISOString() }),
-          getMySettings(),
+          getEventsCached({ start: todayStart.toISOString(), end: todayEnd.toISOString() }),
+          getMySettingsCached(),
         ]);
         const usedTaskHours = todays.reduce((sum, t) => sum + (t.durationHours || 0), 0);
         const clamp = (n: number, min: number, max: number) => Math.max(min, Math.min(max, n));
@@ -311,7 +311,7 @@ export default function MainPage() {
             <Progress
               classNames={{
                 base: "w-full",
-                track: "drop-shadow-md border border-default",
+                track: "drop-shadow-md",
                 indicator: "bg-linear-to-r from-neutral-400 via-neutral-700 to-black",
                 label: "tracking-wider font-medium text-default-600",
                 value: "text-foreground/60",
@@ -334,7 +334,7 @@ export default function MainPage() {
                 {tasks.length}
               </span>
             </div>
-            <div className="relative rounded-xl border border-default p-2 overflow-hidden flex-1 min-h-0">
+            <div className="relative rounded-xl p-2 overflow-hidden flex-1 min-h-0">
               <div className="h-full overflow-y-auto overflow-x-hidden touch-pan-y overscroll-y-contain">
                 {tasks.map((task) => (
                   <div key={task.id} className="mb-3 last:mb-0">
@@ -362,7 +362,7 @@ export default function MainPage() {
           </div>
 
           {/* Просрочено */}
-          <div className="flex flex-col mt-2 pt-2 border-t border-default-200">
+          <div className="flex flex-col mt-2 pt-2">
             <div
               className="mb-1 flex cursor-pointer select-none items-center justify-between font-bold text-lg md:text-xl"
               onClick={() => setShowOverdue((v) => !v)}
@@ -376,7 +376,7 @@ export default function MainPage() {
               <span className="text-default-500">{showOverdue ? "▾" : "▸"}</span>
             </div>
             {showOverdue && (
-              <div className="relative rounded-xl border border-default p-2 overflow-hidden">
+              <div className="relative rounded-xl p-2 overflow-hidden">
                 <div
                   ref={overdueListRef}
                   className="overflow-y-auto overflow-x-hidden touch-pan-y overscroll-y-contain"
@@ -400,7 +400,7 @@ export default function MainPage() {
           </div>
 
           {/* Заранее */}
-          <div className="flex flex-col mt-2 pt-2 border-t border-default-200">
+          <div className="flex flex-col mt-2 pt-2">
             <div
               className="mb-1 flex cursor-pointer select-none items-center justify-between font-bold text-lg md:text-xl"
               onClick={() => setShowUpcoming((v) => !v)}
@@ -414,7 +414,7 @@ export default function MainPage() {
               <span className="text-default-500">{showUpcoming ? "▾" : "▸"}</span>
             </div>
             {showUpcoming && (
-              <div className="relative rounded-xl border border-default p-2 overflow-hidden">
+              <div className="relative rounded-xl p-2 overflow-hidden">
                 <div
                   ref={upcomingListRef}
                   className="overflow-y-auto overflow-x-hidden touch-pan-y overscroll-y-contain"
